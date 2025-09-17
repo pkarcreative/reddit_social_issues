@@ -345,7 +345,7 @@ def main():
                 <strong>From:</strong> {earliest}<br><br>
                 <strong>To:</strong> {latest}<br><br>
                 <strong>Duration:</strong> {days_span} days<br><br>
-                <strong>Collection Date:</strong> 03-07-2025<br><br>
+                <strong>Collection Date:</strong> 16-09-2025<br><br>
                 <strong>Total Posts:</strong> {len(df)}
                 </div>
                 """, unsafe_allow_html=True)
@@ -533,4 +533,5 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
+
     main()
