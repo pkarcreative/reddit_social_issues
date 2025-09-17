@@ -520,7 +520,7 @@ def main():
         st.sidebar.write(f"From: {earliest_date}")
         st.sidebar.write(f"To: {latest_date}")
         st.sidebar.write(f"Span: {(df['created_datetime'].max() - df['created_datetime'].min()).days} days")
-        st.sidebar.write("**Collection:** 03-07-2025")
+        st.sidebar.write("**Collection:** 16-09-2025")
     
     # Footer
     st.markdown("---")
@@ -535,3 +535,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
