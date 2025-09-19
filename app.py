@@ -368,7 +368,7 @@ def main():
         st.markdown("""
         **1. Data Collection**
         - Posts collected from selected Australian subreddits
-        - Collection Date: 03-07-2025
+        - Collection Date: 16-09-2025
         - Focus on housing and cost of living discussions
         
         **2. Category Classification**
@@ -535,4 +535,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
