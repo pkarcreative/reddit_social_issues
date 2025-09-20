@@ -720,7 +720,8 @@ def create_category_comparison():
 
 def main():
     st.title("🇦🇺 Australian Social Issues Explorer")
-    st.markdown("<h3 style='text-align: center; color: #666; font-size: 18px;'>Analysing Housing and Cost of Living Discussions</h3>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #666; font-size: 18px;'>Analysing Housing and Cost of Living Discussions</h2>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #888; font-size: 16px;'>👈 Select your view from the side panel</h3>", unsafe_allow_html=True)
     
     # Add key definitions at the top
     with st.expander("📖 Key Definitions"):
@@ -958,6 +959,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
