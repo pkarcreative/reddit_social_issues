@@ -358,7 +358,7 @@ def create_solution_identification(df_filtered):
             st.plotly_chart(fig, use_container_width=True)
             
             # Topic selection and posts
-            st.markdown("<h4 style='font-size: 18px;'>✨ Explore Solution Posts by Topic</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='font-size: 18px;'>✨ Explore Possible Solution Posts by Topic</h4>", unsafe_allow_html=True)
             
             selected_solution_topic = st.selectbox(
                 "Select a topic to see positive posts:",
@@ -381,7 +381,7 @@ def create_solution_identification(df_filtered):
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Solutions Found", len(topic_solution_posts))
+                    st.metric("Possible Solutions Found", len(topic_solution_posts))
                 with col2:
                     st.metric("Avg Score", f"{topic_stats['score']:.0f}")
                 with col3:
@@ -390,7 +390,7 @@ def create_solution_identification(df_filtered):
                 st.markdown(f"<p style='font-size: 16px;'><strong>Positive posts about: {selected_solution_topic}</strong></p>", unsafe_allow_html=True)
                 
                 for i, (_, post) in enumerate(topic_solution_posts.iterrows(), 1):
-                    with st.expander(f"💡 Solution {i}: Score {post['score']}, r/{post['subreddit']} ({post['num_comments']} comments)"):
+                    with st.expander(f"💡 Possible Solution {i}: Score {post['score']}, r/{post['subreddit']} ({post['num_comments']} comments)"):
                         # Split title and text
                         full_text = post['text_full']
                         if '\n' in full_text:
@@ -406,7 +406,7 @@ def create_solution_identification(df_filtered):
                         
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.markdown(f"<p style='font-size: 15px;'><strong>Sentiment:</strong> 😊 Very Positive ({post['senti_class']:.1f}/5)</p>", unsafe_allow_html=True)
+                           # st.markdown(f"<p style='font-size: 15px;'><strong>Sentiment:</strong> 😊 Very Positive ({post['senti_class']:.1f}/5)</p>", unsafe_allow_html=True)
                             st.markdown(f"<p style='font-size: 15px;'><strong>Engagement:</strong> {post['num_comments']} comments</p>", unsafe_allow_html=True)
                         
                         with col2:
@@ -959,4 +959,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
