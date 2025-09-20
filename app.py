@@ -766,7 +766,7 @@ def main():
     # Category filter
     view_option = st.sidebar.selectbox(
         "Select View:",
-        ["Housing Analysis", "Cost of Living Analysis", "Compare Both", "Trending Analysis", "Geographic Analysis", "Solution Finder"]
+        ["Housing Analysis", "Cost of Living Analysis", "Trending Analysis", "Geographic Analysis", "Solution Finder"]
     )
     
     # Methodology section
@@ -959,3 +959,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
