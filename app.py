@@ -145,7 +145,7 @@ def create_engagement_sentiment_scatter(df_filtered, color):
 
 def create_trending_analysis(df_filtered):
     """Show trending topics over time"""
-    st.markdown("<h3 style='font-size: 20px;'>📈 Trending Issues Over Time</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='font-size: 20px;'>📈 Discussion Volume Trends</h3>", unsafe_allow_html=True)
     
     if 'created_datetime' not in df_filtered.columns:
         st.info("Time-based analysis requires datetime data. Please ensure 'created_datetime' column exists.")
@@ -158,88 +158,82 @@ def create_trending_analysis(df_filtered):
     # Get top 5 topics by volume
     top_topics = df_filtered['topic_label'].value_counts().head(5).index
     
-    # Create weekly trend data
-    weekly_trends = df_filtered[df_filtered['topic_label'].isin(top_topics)].groupby(['week', 'topic_label']).agg({
-        'senti_class': 'mean',
-        'text_full': 'count'
-    }).reset_index()
-    weekly_trends.columns = ['week', 'topic', 'avg_sentiment', 'post_count']
+    # Create weekly trend data for discussion volume only
+    weekly_trends = df_filtered[df_filtered['topic_label'].isin(top_topics)].groupby(['week', 'topic_label']).size().reset_index(name='post_count')
     
-    # Create dual-axis chart
-    fig = go.Figure()
-    
-    colors = px.colors.qualitative.Set3[:len(top_topics)]
-    
-    for i, topic in enumerate(top_topics):
-        topic_data = weekly_trends[weekly_trends['topic'] == topic]
-        
-        # Add post count line
-        fig.add_trace(go.Scatter(
-            x=topic_data['week'],
-            y=topic_data['post_count'],
-            name=f"{topic} (Volume)",
-            line=dict(color=colors[i], width=2),
-            yaxis='y'
-        ))
-        
-        # Add sentiment line (scaled)
-        fig.add_trace(go.Scatter(
-            x=topic_data['week'],
-            y=topic_data['avg_sentiment'] * 10,  # Scale sentiment for visibility
-            name=f"{topic} (Sentiment x10)",
-            line=dict(color=colors[i], width=2, dash='dash'),
-            yaxis='y2'
-        ))
+    # Create simple line chart for volume trends
+    fig = px.line(
+        weekly_trends,
+        x='week',
+        y='post_count',
+        color='topic_label',
+        title="Weekly Discussion Volume for Top Issues",
+        labels={'post_count': 'Number of Posts', 'week': 'Week', 'topic_label': 'Topic'}
+    )
     
     fig.update_layout(
-        title="Topic Volume and Sentiment Trends (Last 8 Weeks)",
-        xaxis_title="Week",
-        yaxis=dict(title="Number of Posts", side="left"),
-        yaxis2=dict(title="Average Sentiment (×10)", side="right", overlaying="y"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=500,
+        height=450,
         plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
+        paper_bgcolor='rgba(0,0,0,0)',
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.1,
+            xanchor="center",
+            x=0.5
+        )
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Escalation alerts
-    st.markdown("<h4 style='font-size: 18px;'>🚨 Issue Escalation Alerts</h4>", unsafe_allow_html=True)
+    # Issue intensity analysis
+    st.markdown("<h4 style='font-size: 18px;'>🚨 Issue Intensity Analysis</h4>", unsafe_allow_html=True)
     
-    # Calculate recent vs historical averages
-    recent_week = df_filtered['week'].max()
-    week_before = recent_week - timedelta(weeks=1)
+    # Calculate recent vs historical patterns (using last 25% of data as "recent")
+    df_sorted = df_filtered.sort_values('created_datetime')
+    recent_cutoff = len(df_sorted) * 0.75
+    recent_data = df_sorted.iloc[int(recent_cutoff):]
+    historical_data = df_sorted.iloc[:int(recent_cutoff)]
     
-    recent_data = df_filtered[df_filtered['week'] >= week_before].groupby('topic_label').agg({
-        'senti_class': 'mean',
-        'text_full': 'count'
-    })
-    
-    historical_data = df_filtered[df_filtered['week'] < week_before].groupby('topic_label').agg({
-        'senti_class': 'mean',
-        'text_full': 'count'
-    })
-    
-    # Find topics with significant negative sentiment changes
-    alerts = []
-    for topic in recent_data.index:
-        if topic in historical_data.index:
-            sentiment_change = recent_data.loc[topic, 'senti_class'] - historical_data.loc[topic, 'senti_class']
-            volume_change = recent_data.loc[topic, 'text_full'] - historical_data.loc[topic, 'text_full']
+    if len(recent_data) > 0 and len(historical_data) > 0:
+        recent_summary = recent_data.groupby('topic_label').agg({
+            'senti_class': 'mean',
+            'text_full': 'count'
+        })
+        
+        historical_summary = historical_data.groupby('topic_label').agg({
+            'senti_class': 'mean',
+            'text_full': 'count'
+        })
+        
+        # Find topics with significant changes
+        intensity_alerts = []
+        for topic in recent_summary.index:
+            if topic in historical_summary.index and recent_summary.loc[topic, 'text_full'] >= 3:
+                sentiment_change = recent_summary.loc[topic, 'senti_class'] - historical_summary.loc[topic, 'senti_class']
+                volume_ratio = recent_summary.loc[topic, 'text_full'] / max(historical_summary.loc[topic, 'text_full'], 1)
+                
+                # Flag if sentiment dropped significantly OR volume increased significantly
+                if sentiment_change < -0.3 or volume_ratio > 1.5:
+                    intensity_alerts.append({
+                        'topic': topic,
+                        'sentiment_change': sentiment_change,
+                        'volume_ratio': volume_ratio,
+                        'recent_posts': recent_summary.loc[topic, 'text_full']
+                    })
+        
+        if intensity_alerts:
+            intensity_alerts = sorted(intensity_alerts, key=lambda x: abs(x['sentiment_change']) + x['volume_ratio'], reverse=True)
             
-            if sentiment_change < -0.3 and volume_change > 2:  # Significant negative change + increased volume
-                alerts.append({
-                    'topic': topic,
-                    'sentiment_change': sentiment_change,
-                    'volume_change': volume_change
-                })
-    
-    if alerts:
-        for alert in alerts[:3]:  # Show top 3 alerts
-            st.warning(f"⚠️ **{alert['topic']}**: Sentiment dropped by {abs(alert['sentiment_change']):.1f} points with {alert['volume_change']} more posts this week")
+            for alert in intensity_alerts[:3]:  # Show top 3 alerts
+                if alert['sentiment_change'] < -0.3:
+                    st.warning(f"📉 **{alert['topic']}**: Sentiment decreased by {abs(alert['sentiment_change']):.1f} points in recent period ({alert['recent_posts']} recent posts)")
+                elif alert['volume_ratio'] > 1.5:
+                    st.info(f"📈 **{alert['topic']}**: Discussion volume increased {alert['volume_ratio']:.1f}x in recent period ({alert['recent_posts']} recent posts)")
+        else:
+            st.success("✅ No significant issue intensity changes detected in recent period")
     else:
-        st.success("✅ No significant issue escalations detected this week")
+        st.info("Insufficient data to compare recent vs historical patterns")
 
 def create_geographic_analysis(df_filtered):
     """Analyze issues by location if location data available"""
@@ -265,123 +259,164 @@ def create_geographic_analysis(df_filtered):
     
     df_filtered['location'] = df_filtered['subreddit'].apply(get_location)
     
-    # Create location-based analysis
-    location_analysis = df_filtered.groupby(['location', 'topic_label']).agg({
+    # Simple location summary instead of complex faceted chart
+    location_summary = df_filtered.groupby('location').agg({
         'senti_class': 'mean',
+        'score': 'mean',
         'text_full': 'count'
-    }).reset_index()
+    }).round(2)
     
-    # Filter out 'other' and low-volume topics
-    location_analysis = location_analysis[
-        (location_analysis['location'] != 'other') & 
-        (location_analysis['text_full'] >= 3)
-    ]
+    # Filter out 'other' if it exists
+    location_summary = location_summary[location_summary.index != 'other']
     
-    if not location_analysis.empty:
-        fig = px.bar(
-            location_analysis,
-            x='location',
-            y='text_full',
-            color='senti_class',
-            facet_col='topic_label',
-            facet_col_wrap=3,
-            title="Issue Discussion Volume by Location",
-            color_continuous_scale='RdYlBu',
-            labels={'text_full': 'Number of Posts', 'senti_class': 'Avg Sentiment'}
-        )
-        fig.update_layout(
-            height=600,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    if not location_summary.empty and len(location_summary) > 1:
+        col1, col2 = st.columns(2)
         
-        # Location-specific insights
+        with col1:
+            fig1 = px.bar(
+                x=location_summary.index,
+                y=location_summary['text_full'],
+                title="Discussion Volume by Region",
+                color=location_summary.index,
+                labels={'y': 'Number of Posts', 'x': 'Region'}
+            )
+            fig1.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                showlegend=False
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+        
+        with col2:
+            fig2 = px.bar(
+                x=location_summary.index,
+                y=location_summary['senti_class'],
+                title="Average Sentiment by Region",
+                color=location_summary['senti_class'],
+                color_continuous_scale='RdYlGn',
+                labels={'y': 'Average Sentiment', 'x': 'Region'}
+            )
+            fig2.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        # Regional insights
         st.markdown("<h4 style='font-size: 18px;'>📍 Regional Insights</h4>", unsafe_allow_html=True)
         
-        location_summary = df_filtered.groupby('location').agg({
-            'senti_class': 'mean',
-            'score': 'mean',
-            'text_full': 'count'
-        }).round(2)
-        
-        location_summary = location_summary[location_summary.index != 'other']
-        
-        if not location_summary.empty:
-            # Find most/least optimistic regions
+        if len(location_summary) > 1:
             most_positive = location_summary['senti_class'].idxmax()
             least_positive = location_summary['senti_class'].idxmin()
             
             col1, col2 = st.columns(2)
             with col1:
-                st.success(f"🟢 **Most Optimistic**: {most_positive.title()} (Sentiment: {location_summary.loc[most_positive, 'senti_class']:.1f})")
+                st.success(f"🟢 **Most Optimistic**: {most_positive.title().replace('_', ' ')} (Sentiment: {location_summary.loc[most_positive, 'senti_class']:.1f})")
             with col2:
-                st.error(f"🔴 **Most Concerned**: {least_positive.title()} (Sentiment: {location_summary.loc[least_positive, 'senti_class']:.1f})")
+                st.error(f"🔴 **Most Concerned**: {least_positive.title().replace('_', ' ')} (Sentiment: {location_summary.loc[least_positive, 'senti_class']:.1f})")
     else:
         st.info("Geographic analysis requires location-specific subreddits. Current data appears to be from general Australian communities.")
 
 def create_solution_identification(df_filtered):
-    """Find highly upvoted positive posts - potential solutions"""
+    """Find highly upvoted positive posts - potential solutions organized by topic"""
     st.markdown("<h3 style='font-size: 20px;'>💡 Community Solutions & Success Stories</h3>", unsafe_allow_html=True)
-    st.markdown("<p style='font-size: 16px; font-style: italic;'>Highly upvoted positive posts that might contain solutions or hope</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 16px; font-style: italic;'>Topics with highly upvoted positive posts that might contain solutions</p>", unsafe_allow_html=True)
     
     # Find positive posts (sentiment >= 4) with high engagement
     solutions = df_filtered[
         (df_filtered['senti_class'] >= 4) & 
-        (df_filtered['score'] >= df_filtered['score'].quantile(0.8))
-    ].nlargest(10, 'score')
+        (df_filtered['score'] >= df_filtered['score'].quantile(0.7))
+    ]
     
     if not solutions.empty:
-        # Group by topic
+        # Group by topic and get stats
         solution_topics = solutions.groupby('topic_label').agg({
-            'score': 'mean',
-            'senti_class': 'mean',
-            'text_full': 'count'
+            'score': ['mean', 'count'],
+            'senti_class': 'mean'
         }).round(2)
         
-        fig = px.bar(
-            x=solution_topics.index,
-            y=solution_topics['score'],
-            title="Topics with Most Positive Community Response",
-            color=solution_topics['senti_class'],
-            color_continuous_scale='Greens'
-        )
-        fig.update_layout(
-            xaxis_title="Topics with Solutions/Success Stories",
-            yaxis_title="Average Score",
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
-        fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
+        # Flatten column names
+        solution_topics.columns = ['avg_score', 'post_count', 'avg_sentiment']
+        solution_topics = solution_topics[solution_topics['post_count'] >= 2]  # At least 2 positive posts
+        solution_topics = solution_topics.sort_values('avg_score', ascending=False)
         
-        # Show actual solution posts
-        st.markdown("<h4 style='font-size: 18px;'>✨ Top Solution Posts</h4>", unsafe_allow_html=True)
-        
-        for i, (_, post) in enumerate(solutions.head(3).iterrows(), 1):
-            with st.expander(f"💡 Solution {i}: {post['topic_label']} (Score: {post['score']}, r/{post['subreddit']})"):
-                # Split title and text
-                full_text = post['text_full']
-                if '\n' in full_text:
-                    title_part = full_text.split('\n')[0]
-                    content_part = '\n'.join(full_text.split('\n')[1:])
-                else:
-                    title_part = full_text
-                    content_part = ""
+        if not solution_topics.empty:
+            # Show topic overview chart
+            fig = px.bar(
+                x=solution_topics.index,
+                y=solution_topics['avg_score'],
+                title="Topics with Most Positive Community Response",
+                color=solution_topics['avg_sentiment'],
+                color_continuous_scale='Greens',
+                labels={'y': 'Average Score', 'x': 'Topics with Positive Solutions'}
+            )
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            fig.update_xaxes(tickangle=45)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Topic selection and posts
+            st.markdown("<h4 style='font-size: 18px;'>✨ Explore Solution Posts by Topic</h4>", unsafe_allow_html=True)
+            
+            selected_solution_topic = st.selectbox(
+                "Select a topic to see positive posts:",
+                options=solution_topics.index.tolist(),
+                help="Choose a topic to view community solutions and success stories"
+            )
+            
+            # Get posts for selected topic
+            topic_solution_posts = solutions[
+                solutions['topic_label'] == selected_solution_topic
+            ].nlargest(5, 'score')
+            
+            if not topic_solution_posts.empty:
+                # Show topic stats
+                topic_stats = topic_solution_posts.agg({
+                    'score': 'mean',
+                    'senti_class': 'mean',
+                    'num_comments': 'mean'
+                })
                 
-                st.markdown(f"<p style='font-size: 15px;'><strong>Title:</strong> {title_part}</p>", unsafe_allow_html=True)
-                if content_part.strip():
-                    st.markdown(f"<p style='font-size: 15px;'><strong>Content:</strong> {content_part[:400]}{'...' if len(content_part) > 400 else ''}</p>", unsafe_allow_html=True)
-                
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.markdown(f"<p style='font-size: 15px;'><strong>Sentiment:</strong> 😊 Very Positive ({post['senti_class']:.1f}/5)</p>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='font-size: 15px;'><strong>Comments:</strong> {post['num_comments']} (High engagement)</p>", unsafe_allow_html=True)
-                
+                    st.metric("Solutions Found", len(topic_solution_posts))
                 with col2:
-                    st.markdown(f"<p style='font-size: 15px;'><strong>Score:</strong> {post['score']} upvotes</p>", unsafe_allow_html=True)
-                    if 'url' in post and post['url']:
-                        st.markdown(f"<p style='font-size: 15px;'><strong><a href='{post['url']}' target='_blank'>Read Full Post</a></strong></p>", unsafe_allow_html=True)
+                    st.metric("Avg Score", f"{topic_stats['score']:.0f}")
+                with col3:
+                    st.metric("Avg Sentiment", f"{topic_stats['senti_class']:.1f}/5")
+                
+                st.markdown(f"<p style='font-size: 16px;'><strong>Positive posts about: {selected_solution_topic}</strong></p>", unsafe_allow_html=True)
+                
+                for i, (_, post) in enumerate(topic_solution_posts.iterrows(), 1):
+                    with st.expander(f"💡 Solution {i}: Score {post['score']}, r/{post['subreddit']} ({post['num_comments']} comments)"):
+                        # Split title and text
+                        full_text = post['text_full']
+                        if '\n' in full_text:
+                            title_part = full_text.split('\n')[0]
+                            content_part = '\n'.join(full_text.split('\n')[1:])
+                        else:
+                            title_part = full_text
+                            content_part = ""
+                        
+                        st.markdown(f"<p style='font-size: 15px;'><strong>Title:</strong> {title_part}</p>", unsafe_allow_html=True)
+                        if content_part.strip():
+                            st.markdown(f"<p style='font-size: 15px;'><strong>Content:</strong> {content_part[:400]}{'...' if len(content_part) > 400 else ''}</p>", unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"<p style='font-size: 15px;'><strong>Sentiment:</strong> 😊 Very Positive ({post['senti_class']:.1f}/5)</p>", unsafe_allow_html=True)
+                            st.markdown(f"<p style='font-size: 15px;'><strong>Engagement:</strong> {post['num_comments']} comments</p>", unsafe_allow_html=True)
+                        
+                        with col2:
+                            st.markdown(f"<p style='font-size: 15px;'><strong>Score:</strong> {post['score']} upvotes</p>", unsafe_allow_html=True)
+                            if 'url' in post and post['url']:
+                                st.markdown(f"<p style='font-size: 15px;'><strong><a href='{post['url']}' target='_blank'>Read Full Post</a></strong></p>", unsafe_allow_html=True)
+            else:
+                st.info("No solution posts found for this topic.")
+        else:
+            st.info("No topics found with multiple positive, highly-rated posts.")
     else:
         st.info("No highly positive posts found in current filter selection.")
 
