@@ -2,6 +2,12 @@
 
 An interactive dashboard analyzing Australian housing and cost of living discussions from Reddit communities, providing insights into community sentiment and emerging social issues.
 
+## 🌐 Live Demo
+
+**[View the Dashboard](https://reddit-social-issues.streamlit.app/)**
+
+Try the interactive dashboard directly in your browser - no installation required!
+
 ## 📊 Overview
 
 This Streamlit application analyzes Reddit posts from Australian communities to understand public sentiment around housing and cost of living issues. The dashboard identifies trending topics, community concerns, and potential solutions through data-driven analysis.
