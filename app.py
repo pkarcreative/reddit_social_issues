@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+from datetime import datetime, timedelta
 
 st.set_page_config(
     page_title="Australian Social Issues Explorer",
@@ -62,8 +63,8 @@ def create_sentiment_overview(df_filtered, color):
         yaxis_title="Number of Posts",
         xaxis_title_font_size=14,
         yaxis_title_font_size=14,
-        xaxis_title_font_color='black',
-        yaxis_title_font_color='black'
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
     )
     return fig
 
@@ -90,14 +91,19 @@ def create_topic_sentiment_chart(df_filtered, color):
         }
     )
     fig.update_xaxes(tickangle=45, title="Topics", 
-                     title_font_size=14, title_font_color='black')
+                     title_font_size=14)
     fig.update_yaxes(title="Number of Posts", 
-                     title_font_size=14, title_font_color='black')
-    fig.update_layout(height=600, legend_title="Sentiment")  # Increased height
+                     title_font_size=14)
+    fig.update_layout(
+        height=600, 
+        legend_title="Sentiment",
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
     return fig
 
 def create_engagement_sentiment_scatter(df_filtered, color):
-    """Engagement vs Sentiment scatter plot"""
+    """Engagement vs Sentiment scatter plot with improved visibility and explanation"""
     df_filtered['severity'] = calculate_severity_score(
         df_filtered['senti_class'], 
         df_filtered['score'], 
@@ -110,28 +116,277 @@ def create_engagement_sentiment_scatter(df_filtered, color):
         y='score',
         size='num_comments',
         hover_data=['topic_label', 'subreddit', 'url'],
-        title="Score vs Sentiment",
+        title="Community Response: How Australians Vote on Different Sentiment Posts",
         color_discrete_sequence=[color]
     )
     fig.update_xaxes(title="Sentiment Score (1=Negative, 5=Positive)", 
-                     title_font_size=14, title_font_color='black')
+                     title_font_size=14)
     fig.update_yaxes(title="Score (Upvotes - Downvotes)", 
-                     title_font_size=14, title_font_color='black')
+                     title_font_size=14)
     
-    # Add explanation for bubble size
+    # Add quadrant explanation
     fig.add_annotation(
-        text="Each bubble = One Reddit post<br>Bubble size = Number of comments",
+        text="📍 Bottom-left = Widespread community problems<br>📍 Top-right = Community solutions/success stories<br>📍 Bubble size = Number of comments",
         xref="paper", yref="paper",
         x=0.02, y=0.98,
         showarrow=False,
-        font=dict(size=12, color="gray"),
-        bgcolor="rgba(255,255,255,0.8)"
+        font=dict(size=12, color="#333333"),
+        bgcolor="rgba(255,255,255,0.9)",
+        bordercolor="#333333",
+        borderwidth=1
+    )
+    
+    fig.update_layout(
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
     )
     
     return fig
 
+def create_trending_analysis(df_filtered):
+    """Show trending topics over time"""
+    st.markdown("<h3 style='font-size: 20px;'>📈 Trending Issues Over Time</h3>", unsafe_allow_html=True)
+    
+    if 'created_datetime' not in df_filtered.columns:
+        st.info("Time-based analysis requires datetime data. Please ensure 'created_datetime' column exists.")
+        return
+    
+    # Convert to datetime and create weekly aggregation
+    df_filtered['created_datetime'] = pd.to_datetime(df_filtered['created_datetime'])
+    df_filtered['week'] = df_filtered['created_datetime'].dt.to_period('W').dt.start_time
+    
+    # Get top 5 topics by volume
+    top_topics = df_filtered['topic_label'].value_counts().head(5).index
+    
+    # Create weekly trend data
+    weekly_trends = df_filtered[df_filtered['topic_label'].isin(top_topics)].groupby(['week', 'topic_label']).agg({
+        'senti_class': 'mean',
+        'text_full': 'count'
+    }).reset_index()
+    weekly_trends.columns = ['week', 'topic', 'avg_sentiment', 'post_count']
+    
+    # Create dual-axis chart
+    fig = go.Figure()
+    
+    colors = px.colors.qualitative.Set3[:len(top_topics)]
+    
+    for i, topic in enumerate(top_topics):
+        topic_data = weekly_trends[weekly_trends['topic'] == topic]
+        
+        # Add post count line
+        fig.add_trace(go.Scatter(
+            x=topic_data['week'],
+            y=topic_data['post_count'],
+            name=f"{topic} (Volume)",
+            line=dict(color=colors[i], width=2),
+            yaxis='y'
+        ))
+        
+        # Add sentiment line (scaled)
+        fig.add_trace(go.Scatter(
+            x=topic_data['week'],
+            y=topic_data['avg_sentiment'] * 10,  # Scale sentiment for visibility
+            name=f"{topic} (Sentiment x10)",
+            line=dict(color=colors[i], width=2, dash='dash'),
+            yaxis='y2'
+        ))
+    
+    fig.update_layout(
+        title="Topic Volume and Sentiment Trends (Last 8 Weeks)",
+        xaxis_title="Week",
+        yaxis=dict(title="Number of Posts", side="left"),
+        yaxis2=dict(title="Average Sentiment (×10)", side="right", overlaying="y"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=500,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Escalation alerts
+    st.markdown("<h4 style='font-size: 18px;'>🚨 Issue Escalation Alerts</h4>", unsafe_allow_html=True)
+    
+    # Calculate recent vs historical averages
+    recent_week = df_filtered['week'].max()
+    week_before = recent_week - timedelta(weeks=1)
+    
+    recent_data = df_filtered[df_filtered['week'] >= week_before].groupby('topic_label').agg({
+        'senti_class': 'mean',
+        'text_full': 'count'
+    })
+    
+    historical_data = df_filtered[df_filtered['week'] < week_before].groupby('topic_label').agg({
+        'senti_class': 'mean',
+        'text_full': 'count'
+    })
+    
+    # Find topics with significant negative sentiment changes
+    alerts = []
+    for topic in recent_data.index:
+        if topic in historical_data.index:
+            sentiment_change = recent_data.loc[topic, 'senti_class'] - historical_data.loc[topic, 'senti_class']
+            volume_change = recent_data.loc[topic, 'text_full'] - historical_data.loc[topic, 'text_full']
+            
+            if sentiment_change < -0.3 and volume_change > 2:  # Significant negative change + increased volume
+                alerts.append({
+                    'topic': topic,
+                    'sentiment_change': sentiment_change,
+                    'volume_change': volume_change
+                })
+    
+    if alerts:
+        for alert in alerts[:3]:  # Show top 3 alerts
+            st.warning(f"⚠️ **{alert['topic']}**: Sentiment dropped by {abs(alert['sentiment_change']):.1f} points with {alert['volume_change']} more posts this week")
+    else:
+        st.success("✅ No significant issue escalations detected this week")
+
+def create_geographic_analysis(df_filtered):
+    """Analyze issues by location if location data available"""
+    st.markdown("<h3 style='font-size: 20px;'>🗺️ Geographic Issue Distribution</h3>", unsafe_allow_html=True)
+    
+    # Check if we have location indicators in subreddit names
+    location_keywords = {
+        'sydney': ['sydney', 'nsw'],
+        'melbourne': ['melbourne', 'victoria'],
+        'brisbane': ['brisbane', 'queensland'],
+        'perth': ['perth', 'westernaustralia'],
+        'adelaide': ['adelaide', 'southaustralia'],
+        'australia_general': ['australia', 'aus', 'aussie']
+    }
+    
+    # Map subreddits to locations
+    def get_location(subreddit):
+        subreddit_lower = subreddit.lower()
+        for location, keywords in location_keywords.items():
+            if any(keyword in subreddit_lower for keyword in keywords):
+                return location
+        return 'other'
+    
+    df_filtered['location'] = df_filtered['subreddit'].apply(get_location)
+    
+    # Create location-based analysis
+    location_analysis = df_filtered.groupby(['location', 'topic_label']).agg({
+        'senti_class': 'mean',
+        'text_full': 'count'
+    }).reset_index()
+    
+    # Filter out 'other' and low-volume topics
+    location_analysis = location_analysis[
+        (location_analysis['location'] != 'other') & 
+        (location_analysis['text_full'] >= 3)
+    ]
+    
+    if not location_analysis.empty:
+        fig = px.bar(
+            location_analysis,
+            x='location',
+            y='text_full',
+            color='senti_class',
+            facet_col='topic_label',
+            facet_col_wrap=3,
+            title="Issue Discussion Volume by Location",
+            color_continuous_scale='RdYlBu',
+            labels={'text_full': 'Number of Posts', 'senti_class': 'Avg Sentiment'}
+        )
+        fig.update_layout(
+            height=600,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Location-specific insights
+        st.markdown("<h4 style='font-size: 18px;'>📍 Regional Insights</h4>", unsafe_allow_html=True)
+        
+        location_summary = df_filtered.groupby('location').agg({
+            'senti_class': 'mean',
+            'score': 'mean',
+            'text_full': 'count'
+        }).round(2)
+        
+        location_summary = location_summary[location_summary.index != 'other']
+        
+        if not location_summary.empty:
+            # Find most/least optimistic regions
+            most_positive = location_summary['senti_class'].idxmax()
+            least_positive = location_summary['senti_class'].idxmin()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.success(f"🟢 **Most Optimistic**: {most_positive.title()} (Sentiment: {location_summary.loc[most_positive, 'senti_class']:.1f})")
+            with col2:
+                st.error(f"🔴 **Most Concerned**: {least_positive.title()} (Sentiment: {location_summary.loc[least_positive, 'senti_class']:.1f})")
+    else:
+        st.info("Geographic analysis requires location-specific subreddits. Current data appears to be from general Australian communities.")
+
+def create_solution_identification(df_filtered):
+    """Find highly upvoted positive posts - potential solutions"""
+    st.markdown("<h3 style='font-size: 20px;'>💡 Community Solutions & Success Stories</h3>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 16px; font-style: italic;'>Highly upvoted positive posts that might contain solutions or hope</p>", unsafe_allow_html=True)
+    
+    # Find positive posts (sentiment >= 4) with high engagement
+    solutions = df_filtered[
+        (df_filtered['senti_class'] >= 4) & 
+        (df_filtered['score'] >= df_filtered['score'].quantile(0.8))
+    ].nlargest(10, 'score')
+    
+    if not solutions.empty:
+        # Group by topic
+        solution_topics = solutions.groupby('topic_label').agg({
+            'score': 'mean',
+            'senti_class': 'mean',
+            'text_full': 'count'
+        }).round(2)
+        
+        fig = px.bar(
+            x=solution_topics.index,
+            y=solution_topics['score'],
+            title="Topics with Most Positive Community Response",
+            color=solution_topics['senti_class'],
+            color_continuous_scale='Greens'
+        )
+        fig.update_layout(
+            xaxis_title="Topics with Solutions/Success Stories",
+            yaxis_title="Average Score",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
+        fig.update_xaxes(tickangle=45)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show actual solution posts
+        st.markdown("<h4 style='font-size: 18px;'>✨ Top Solution Posts</h4>", unsafe_allow_html=True)
+        
+        for i, (_, post) in enumerate(solutions.head(3).iterrows(), 1):
+            with st.expander(f"💡 Solution {i}: {post['topic_label']} (Score: {post['score']}, r/{post['subreddit']})"):
+                # Split title and text
+                full_text = post['text_full']
+                if '\n' in full_text:
+                    title_part = full_text.split('\n')[0]
+                    content_part = '\n'.join(full_text.split('\n')[1:])
+                else:
+                    title_part = full_text
+                    content_part = ""
+                
+                st.markdown(f"<p style='font-size: 15px;'><strong>Title:</strong> {title_part}</p>", unsafe_allow_html=True)
+                if content_part.strip():
+                    st.markdown(f"<p style='font-size: 15px;'><strong>Content:</strong> {content_part[:400]}{'...' if len(content_part) > 400 else ''}</p>", unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"<p style='font-size: 15px;'><strong>Sentiment:</strong> 😊 Very Positive ({post['senti_class']:.1f}/5)</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='font-size: 15px;'><strong>Comments:</strong> {post['num_comments']} (High engagement)</p>", unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown(f"<p style='font-size: 15px;'><strong>Score:</strong> {post['score']} upvotes</p>", unsafe_allow_html=True)
+                    if 'url' in post and post['url']:
+                        st.markdown(f"<p style='font-size: 15px;'><strong><a href='{post['url']}' target='_blank'>Read Full Post</a></strong></p>", unsafe_allow_html=True)
+    else:
+        st.info("No highly positive posts found in current filter selection.")
+
 def create_top_pain_points(df_filtered):
-    """Identify most problematic topics"""
+    """Identify most problematic topics with improved subtitle"""
     df_filtered['severity'] = calculate_severity_score(
         df_filtered['senti_class'], 
         df_filtered['score'], 
@@ -150,6 +405,7 @@ def create_top_pain_points(df_filtered):
     
     st.markdown("<h3 style='font-size: 20px;'>🚨 Top Pain Points</h3>", unsafe_allow_html=True)
     st.markdown("<p style='font-size: 16px; font-style: italic;'>Issues with highest combination of negative sentiment and community engagement</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 14px; color: #888;'><strong>Ranked by severity (highest to lowest)</strong></p>", unsafe_allow_html=True)
     
     # Add explanation
     with st.expander("ℹ️ How severity is calculated"):
@@ -197,38 +453,84 @@ def create_top_pain_points(df_filtered):
         yaxis_title="Discussion Topics",
         xaxis_title_font_size=14,
         yaxis_title_font_size=14,
-        xaxis_title_font_color='black',
-        yaxis_title_font_color='black',
-        coloraxis_colorbar_title="Avg Sentiment<br>(Dark Red=Negative, Light=Positive)"
+        coloraxis_colorbar_title="Avg Sentiment<br>(Dark Red=Negative, Light=Positive)",
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
     )
     
     st.plotly_chart(fig, use_container_width=True)
 
 def show_sample_posts(df_filtered):
-    """Show sample Reddit posts for pain point topics"""
+    """Show sample Reddit posts for all topics with improved dropdown styling"""
     st.markdown("<h3 style='font-size: 20px;'>📝 Sample Reddit Posts</h3>", unsafe_allow_html=True)
     st.markdown("<p style='font-size: 16px; font-style: italic;'>See what people are actually saying about these issues</p>", unsafe_allow_html=True)
     
-    # Get top 5 pain point topics
+    # Get ALL unique topics, sorted by frequency
+    all_topics = df_filtered['topic_label'].value_counts().index.tolist()
+    
+    # Add custom CSS for dropdown styling
+    st.markdown("""
+    <style>
+    .stSelectbox > div > div > select {
+        background: linear-gradient(45deg, #f0f2f6, #e6e9ef) !important;
+        color: #262730 !important;
+        font-weight: 500 !important;
+    }
+    .stSelectbox > div > div > select option {
+        background: linear-gradient(45deg, #4CAF50, #45a049) !important;
+        color: white !important;
+        padding: 8px !important;
+        margin: 2px 0 !important;
+        font-weight: 500 !important;
+    }
+    .stSelectbox > div > div > select option:nth-child(even) {
+        background: linear-gradient(45deg, #2196F3, #1976D2) !important;
+    }
+    .stSelectbox > div > div > select option:nth-child(3n) {
+        background: linear-gradient(45deg, #FF9800, #F57C00) !important;
+    }
+    .stSelectbox > div > div > select option:nth-child(4n) {
+        background: linear-gradient(45deg, #9C27B0, #7B1FA2) !important;
+    }
+    .stSelectbox > div > div > select option:nth-child(5n) {
+        background: linear-gradient(45deg, #E91E63, #C2185B) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create dropdown for topic selection with ALL topics
+    selected_topic = st.selectbox(
+        "Select a topic to see sample posts:",
+        options=all_topics,
+        help="Choose any topic to view actual Reddit discussions (all topics available)"
+    )
+    
+    # Calculate severity for context
     df_filtered['severity'] = calculate_severity_score(
         df_filtered['senti_class'], 
         df_filtered['score'], 
         df_filtered['num_comments']
     )
     
-    pain_topics = df_filtered.groupby('topic_label')['severity'].mean().sort_values(ascending=False).head(5)
-    
-    # Create dropdown for topic selection
-    selected_topic = st.selectbox(
-        "Select a topic to see sample posts:",
-        options=pain_topics.index.tolist(),
-        help="Choose a topic to view actual Reddit discussions"
-    )
-    
     # Get sample posts for selected topic
     topic_posts = df_filtered[df_filtered['topic_label'] == selected_topic].nlargest(3, 'score')
     
     if not topic_posts.empty:
+        # Show topic statistics
+        topic_stats = df_filtered[df_filtered['topic_label'] == selected_topic]
+        avg_sentiment = topic_stats['senti_class'].mean()
+        total_posts = len(topic_stats)
+        avg_score = topic_stats['score'].mean()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Posts", total_posts)
+        with col2:
+            sentiment_emoji = "😡" if avg_sentiment < 2 else "😟" if avg_sentiment < 3 else "😐" if avg_sentiment < 4 else "😊"
+            st.metric("Avg Sentiment", f"{avg_sentiment:.1f}/5", help=f"{sentiment_emoji}")
+        with col3:
+            st.metric("Avg Score", f"{avg_score:.0f}")
+        
         st.markdown(f"<p style='font-size: 16px;'><strong>Top posts about: {selected_topic}</strong></p>", unsafe_allow_html=True)
         
         for i, (_, post) in enumerate(topic_posts.iterrows(), 1):
@@ -262,6 +564,77 @@ def show_sample_posts(df_filtered):
     else:
         st.info("No posts found for this topic.")
 
+def create_community_insights(df_filtered):
+    """Analyze which subreddits discuss which issues"""
+    st.markdown("<h3 style='font-size: 20px;'>🏘️ Community Discussion Patterns</h3>", unsafe_allow_html=True)
+    
+    # Create subreddit-topic matrix
+    community_topics = df_filtered.groupby(['subreddit', 'topic_label']).agg({
+        'text_full': 'count',
+        'senti_class': 'mean'
+    }).reset_index()
+    
+    # Filter for meaningful volumes
+    community_topics = community_topics[community_topics['text_full'] >= 2]
+    
+    # Get top subreddits and topics
+    top_subreddits = df_filtered['subreddit'].value_counts().head(8).index
+    top_topics = df_filtered['topic_label'].value_counts().head(10).index
+    
+    filtered_data = community_topics[
+        (community_topics['subreddit'].isin(top_subreddits)) &
+        (community_topics['topic_label'].isin(top_topics))
+    ]
+    
+    if not filtered_data.empty:
+        # Create heatmap showing which communities discuss which topics
+        pivot_data = filtered_data.pivot(index='subreddit', columns='topic_label', values='text_full').fillna(0)
+        
+        fig = px.imshow(
+            pivot_data.values,
+            x=pivot_data.columns,
+            y=[f"r/{sub}" for sub in pivot_data.index],
+            title="Community-Topic Discussion Matrix",
+            color_continuous_scale='Blues',
+            aspect='auto'
+        )
+        fig.update_layout(
+            xaxis_title="Discussion Topics",
+            yaxis_title="Subreddit Communities",
+            height=400,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
+        fig.update_xaxes(tickangle=45)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Community specializations
+        st.markdown("<h4 style='font-size: 18px;'>🎯 Community Specializations</h4>", unsafe_allow_html=True)
+        
+        # Find which communities are most focused on specific topics
+        specializations = []
+        for subreddit in top_subreddits:
+            subreddit_data = df_filtered[df_filtered['subreddit'] == subreddit]
+            if len(subreddit_data) > 5:  # Minimum posts for meaningful analysis
+                top_topic = subreddit_data['topic_label'].value_counts().iloc[0]
+                topic_name = subreddit_data['topic_label'].value_counts().index[0]
+                total_posts = len(subreddit_data)
+                specialization_pct = (top_topic / total_posts) * 100
+                
+                if specialization_pct > 30:  # At least 30% focused on one topic
+                    specializations.append({
+                        'subreddit': subreddit,
+                        'topic': topic_name,
+                        'percentage': specialization_pct,
+                        'posts': top_topic
+                    })
+        
+        if specializations:
+            for spec in sorted(specializations, key=lambda x: x['percentage'], reverse=True)[:5]:
+                st.info(f"🎯 **r/{spec['subreddit']}** specializes in **{spec['topic']}** ({spec['percentage']:.0f}% of posts, {spec['posts']} discussions)")
+        else:
+            st.info("Most communities discuss a diverse range of topics rather than specializing.")
+
 def create_category_comparison():
     """Compare housing vs cost of living"""
     st.markdown("<h2 style='font-size: 24px;'>🔍 Category Comparison</h2>", unsafe_allow_html=True)
@@ -288,8 +661,8 @@ def create_category_comparison():
             yaxis_title="Average Sentiment Score",
             xaxis_title_font_size=14,
             yaxis_title_font_size=14,
-            xaxis_title_font_color='black',
-            yaxis_title_font_color='black'
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
         )
         st.plotly_chart(fig, use_container_width=True)
     
@@ -306,8 +679,8 @@ def create_category_comparison():
             yaxis_title="Average Score (Upvotes - Downvotes)",
             xaxis_title_font_size=14,
             yaxis_title_font_size=14,
-            xaxis_title_font_color='black',
-            yaxis_title_font_color='black'
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -358,7 +731,7 @@ def main():
     # Category filter
     view_option = st.sidebar.selectbox(
         "Select View:",
-        ["Housing Analysis", "Cost of Living Analysis", "Compare Both"]
+        ["Housing Analysis", "Cost of Living Analysis", "Compare Both", "Trending Analysis", "Geographic Analysis", "Solution Finder"]
     )
     
     # Methodology section
@@ -390,7 +763,7 @@ def main():
         - Engagement: Reddit score + comment volume
         """, unsafe_allow_html=True)
     
-    # Apply filters - removed sentiment filter
+    # Apply filters
     df_filtered = df.copy()
     
     if view_option == "Compare Both":
@@ -412,6 +785,21 @@ def main():
             if not cost_df.empty:
                 create_quick_stats(cost_df, "Cost of Living", "#F24236")
                 st.plotly_chart(create_sentiment_overview(cost_df, "#F24236"), use_container_width=True)
+    
+    elif view_option == "Trending Analysis":
+        st.markdown("<h2 style='color: #9C27B0; font-size: 24px;'>📈 Trending Issues Analysis</h2>", unsafe_allow_html=True)
+        create_trending_analysis(df_filtered)
+        
+        # Add community insights
+        create_community_insights(df_filtered)
+    
+    elif view_option == "Geographic Analysis":
+        st.markdown("<h2 style='color: #4CAF50; font-size: 24px;'>🗺️ Geographic Analysis</h2>", unsafe_allow_html=True)
+        create_geographic_analysis(df_filtered)
+    
+    elif view_option == "Solution Finder":
+        st.markdown("<h2 style='color: #FF9800; font-size: 24px;'>💡 Solution Finder</h2>", unsafe_allow_html=True)
+        create_solution_identification(df_filtered)
     
     elif view_option == "Housing Analysis":
         st.markdown("<h2 style='color: #2E86AB; font-size: 24px;'>🏠 Housing Issues Analysis</h2>", unsafe_allow_html=True)
@@ -454,7 +842,8 @@ def main():
         )
         fig_sub.update_layout(
             title_font_size=16,
-            title_font_color='black'
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
         )
         st.plotly_chart(fig_sub, use_container_width=True)
     
@@ -499,7 +888,8 @@ def main():
         )
         fig_sub.update_layout(
             title_font_size=16,
-            title_font_color='black'
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
         )
         st.plotly_chart(fig_sub, use_container_width=True)
     
@@ -533,7 +923,4 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-
     main()
-
-
