@@ -406,9 +406,7 @@ def create_solution_identification(df_filtered):
                         
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.markdown(f"<p style='font-size: 15px;'><strong>Sentiment:</strong>  ({post['senti_class']:.1f}/5)</p>", unsafe_allow_html=True)
                             st.markdown(f"<p style='font-size: 15px;'><strong>Engagement:</strong> {post['num_comments']} comments</p>", unsafe_allow_html=True)
-                        
                         with col2:
                             st.markdown(f"<p style='font-size: 15px;'><strong>Score:</strong> {post['score']} upvotes</p>", unsafe_allow_html=True)
                         with col3: 
@@ -960,6 +958,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
